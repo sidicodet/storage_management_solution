@@ -20,20 +20,34 @@ const getUserByEmail = async (email: string) => {
   return result.total > 0 ? result.documents[0] : null;
 };
 
-const handleError = (error: unknown, message: string) => {
-  console.log(error, message);
-  throw error;
+const handleError = (error: unknown, defaultMessage: string): string => {
+  console.error("Error:", error);
+  console.error("Context Message:", defaultMessage);
+  if (error && typeof error === 'object' && 'type' in error && error.type) {
+    // This attempts to catch Appwrite specific errors if they have a 'type' property
+    return `Appwrite error: ${error.type}. ${defaultMessage}`;
+  }
+  if (error instanceof Error) {
+    return `${error.message}. ${defaultMessage}`;
+  }
+  return defaultMessage;
 };
 
-export const sendEmailOTP = async ({ email }: { email: string }) => {
+export const sendEmailOTP = async ({ email }: { email: string }): Promise<{ accountId?: string; error?: string }> => {
   const { account } = await createAdminClient();
 
   try {
     const session = await account.createEmailToken(ID.unique(), email);
-
-    return session.userId;
+    if (!session || !session.userId) {
+      // Appwrite's createEmailToken should ideally throw if it fails fundamentally before returning a session object.
+      // However, adding a check here for robustness.
+      const errorMessage = handleError(new Error("Session or userId missing after createEmailToken"), "Failed to send email OTP due to missing session/userId");
+      return { error: errorMessage };
+    }
+    return { accountId: session.userId };
   } catch (error) {
-    handleError(error, "Failed to send email OTP");
+    const errorMessage = handleError(error, "Failed to send email OTP");
+    return { error: errorMessage };
   }
 };
 
